@@ -1,0 +1,15 @@
+services:
+  turntable-discord:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      AUDIO_WS_PORT: 8765
+      GUILD_ID: ${GUILD_ID:-}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-}
+      NEEDLECAST_BOT_AVATAR_FROM_ALBUM: ${NEEDLECAST_BOT_AVATAR_FROM_ALBUM:-1}
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8765:8765"
