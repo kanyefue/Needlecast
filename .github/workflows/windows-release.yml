@@ -28,6 +28,13 @@ jobs:
           python-version: '3.12'
           architecture: 'x64'
 
+      - name: Verify Python used by capture agent
+        shell: pwsh
+        run: |
+          python --version
+          python -c "import sys; print(sys.executable)"
+          py -0p
+
       - name: Install Node dependencies
         run: npm install
 
