@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111318" />
+  <title>Needlecast — Turntable to Discord</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://i.discogs.com https://*.discogs.com https://*.mzstatic.com https://*.apple.com data:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Needlecast home">
+        <span class="brand-mark"><span class="record-center"></span></span>
+        <span class="brand-copy"><strong>needlecast</strong><small>LIVE AUDIO BRIDGE</small></span>
+      </a>
+      <div class="topbar-right"><span class="local-pill"><span class="green-dot"></span> LOCAL INSTANCE</span><span class="version">v0.3.0-alpha.4</span><button class="settings-button" id="open-settings" type="button">⚙ Settings</button></div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> YOUR RECORDS, YOUR VOICE CHANNEL</div>
+          <h1>Let the room<br /><em>hear the record.</em></h1>
+          <p class="hero-description">Broadcast the live sound from your turntable into a Discord voice channel. Import your collection from CSV, optionally connect Discogs, or enter the album manually.</p>
+          <div class="hero-tags"><span><b>01</b> Choose input</span><span><b>02</b> Pick channel</span><span><b>03</b> Go live</span></div>
+        </div>
+        <div class="record-art" aria-hidden="true">
+          <div class="record record-one"><div class="record-grooves"></div><div class="label"><span>NEEDLE</span><small>STEREO / 48K</small><i></i></div></div>
+          <div class="record-shadow"></div>
+          <div class="tonearm"><span class="tonearm-head"></span></div>
+          <div class="art-caption">ANALOG IN <span>→</span> DIGITAL OUT</div>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-label="System status">
+        <article class="status-card"><div class="status-top"><span class="status-icon icon-bot">✳</span><span class="status-label">DISCORD BOT</span><span id="bot-dot" class="status-dot"></span></div><strong id="bot-status">Checking…</strong><small id="bot-detail">Waiting for bot connection</small></article>
+        <article class="status-card"><div class="status-top"><span class="status-icon icon-input">⌁</span><span class="status-label">CAPTURE AGENT</span><span id="agent-dot" class="status-dot"></span></div><strong id="agent-status">Checking…</strong><small id="agent-detail">Runs on your computer</small></article>
+        <article class="status-card"><div class="status-top"><span class="status-icon icon-wave">〰</span><span class="status-label">AUDIO RELAY</span><span id="audio-dot" class="status-dot"></span></div><strong id="audio-status">Standby</strong><small id="audio-detail">48 kHz · stereo PCM</small></article>
+      </section>
+
+      <section class="panel library-panel" aria-labelledby="library-heading">
+        <div class="panel-heading library-heading">
+          <div><div class="section-kicker">YOUR LIBRARY / OPTIONAL DISCogs</div><h2 id="library-heading">Your records, in reach</h2><p class="library-subtitle">Choose the album currently on your turntable. CSV, Discogs, and manual album entry are supported.</p></div>
+          <div class="library-actions"><span id="collection-count" class="collection-count">NO LIBRARY</span><button class="text-button" id="refresh-collection" type="button" hidden>↻ Sync Discogs</button><button class="text-button" id="reload-local-library" type="button">▤ Local library</button><button class="text-button" id="import-csv-button" type="button">＋ Import CSV</button><input id="csv-file" type="file" accept=".csv,text/csv" hidden /><button class="text-button" id="manual-track-button" type="button">♫ Manual entry</button></div>
+        </div>
+        <div class="library-layout">
+          <div class="collection-browser">
+            <div class="collection-search-row"><input id="collection-search" type="search" placeholder="Search your records, artists, labels…" autocomplete="off" aria-label="Search collection" /><span class="search-glyph">⌕</span></div>
+            <div id="collection-status" class="collection-status">Import a Discogs CSV, optionally connect Discogs, or use Manual entry without a library.</div>
+            <div id="album-grid" class="album-grid" aria-live="polite"></div>
+          </div>
+          <div class="release-panel" id="release-panel">
+            <div class="release-empty"><div class="empty-record">◉</div><div class="empty-title">Select an album</div><p>Select an album to mark it as playing.</p></div>
+          </div>
+        </div>
+        <div class="selected-track-strip" id="selected-track-strip" hidden>
+          <div class="selected-track-icon">♫</div><div class="selected-track-copy"><small>MARKED AS PLAYING</small><strong id="selected-track-title">No album selected</strong><span id="selected-track-release"></span></div><span class="selected-track-note">Metadata only · audio remains live from your turntable</span>
+        </div>
+      </section>
+
+      <div class="work-grid">
+        <section class="panel setup-panel">
+          <div class="panel-heading"><div><div class="section-kicker">SETUP / 01</div><h2>Input & destination</h2></div><span class="step-number">01—02</span></div>
+          <div class="field-block">
+            <div class="field-title-row"><label for="device-select">Audio input device</label><button class="text-button" id="refresh-devices" type="button">↻ Refresh</button></div>
+            <div class="select-wrap"><select id="device-select"><option value="">Waiting for capture agent…</option></select><span class="select-chevron">⌄</span></div>
+            <p class="field-hint">Choose the input connected to your turntable. A USB Line-In device is ideal; the motherboard mic input may need lower gain.</p>
+          </div>
+          <div class="field-block gain-block">
+            <div class="field-title-row"><label for="gain-range">Input gain</label><span id="gain-value" class="mono-value">−12 dB</span></div>
+            <input id="gain-range" type="range" min="-36" max="12" value="-12" step="1" />
+            <div class="range-ends"><span>−36 dB · quieter</span><span>+12 dB · louder</span></div>
+          </div>
+          <div class="meter-box">
+            <div class="meter-heading"><span>INPUT LEVEL</span><span id="meter-readout" class="meter-readout">NO SIGNAL</span></div>
+            <div class="meter-track"><div id="level-bar" class="meter-fill"></div><i class="meter-marker marker-yellow"></i><i class="meter-marker marker-red"></i></div>
+            <div class="meter-scale"><span>−∞</span><span>−18 dB</span><span>−6 dB</span><span>0 dBFS</span></div>
+          </div>
+          <div class="field-block discord-field">
+            <div class="field-title-row"><label for="channel-select">Discord voice channel</label><button class="text-button" id="refresh-channels" type="button">↻ Refresh</button></div>
+            <div class="select-wrap"><select id="channel-select"><option value="">Configure the bot first…</option></select><span class="select-chevron">⌄</span></div>
+            <p class="field-hint">The bot joins this channel and sends the live input as its audio stream.</p>
+          </div>
+          <div class="action-row"><button class="primary-button" id="start-button" type="button"><span class="button-symbol">▶</span><span>Start broadcast</span><span class="button-arrow">↗</span></button><button class="stop-button" id="stop-button" type="button" disabled>■ Stop</button></div>
+          <p class="action-hint" id="action-hint">Start Docker and the capture agent, then choose your input and channel.</p>
+        </section>
+
+        <section class="panel monitor-panel">
+          <div class="panel-heading"><div><div class="section-kicker">MONITOR / LIVE</div><h2>Broadcast monitor</h2></div><span id="live-badge" class="live-badge"><span></span> STANDBY</span></div>
+          <div class="monitor-screen">
+            <div class="screen-head"><span>INPUT FEED</span><span id="screen-state">NO CARRIER</span></div>
+            <div class="waveform" id="waveform" aria-label="Audio activity visualization">
+              <div class="wave-center"></div>
+              <div class="wave-bars" id="wave-bars"></div>
+              <div class="wave-label left">L</div><div class="wave-label right">R</div>
+            </div>
+            <div class="monitor-stats"><div><small>SAMPLE RATE</small><strong>48 <i>kHz</i></strong></div><div><small>CHANNELS</small><strong>2 <i>stereo</i></strong></div><div><small>ENCODING</small><strong>Opus <i>voice</i></strong></div></div>
+          </div>
+          <div class="route-list">
+            <div class="route-row"><span class="route-index">A</span><div class="route-copy"><strong>Host input</strong><small id="route-input">Not selected</small></div><span class="route-state" id="route-input-state">WAITING</span></div>
+            <div class="route-connector"></div>
+            <div class="route-row"><span class="route-index">B</span><div class="route-copy"><strong>Local relay</strong><small id="route-relay">WebSocket · localhost:8765</small></div><span class="route-state" id="route-relay-state">WAITING</span></div>
+            <div class="route-connector"></div>
+            <div class="route-row"><span class="route-index">C</span><div class="route-copy"><strong>Discord voice</strong><small id="route-discord">No active channel</small></div><span class="route-state" id="route-discord-state">WAITING</span></div>
+          </div>
+          <div id="notice" class="notice" role="status" aria-live="polite"><span class="notice-symbol">i</span><p>Local-only by design. Nothing is exposed to the public internet by the default Docker configuration.</p></div>
+          <div class="error-box" id="error-box" hidden></div>
+        </section>
+      </div>
+      <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+        <form id="settings-form" class="settings-form">
+          <div class="settings-top"><div><div class="section-kicker">FIRST-RUN SETUP / CONFIGURATION</div><h2 id="settings-title">Connect your setup</h2><p>Credentials are encrypted locally using Windows secure storage. Needlecast never sends them to a Needlecast server.</p></div><button type="button" class="dialog-close" id="close-settings" aria-label="Close settings">×</button></div>
+          <div class="settings-section"><div class="settings-section-title">Discord voice bot</div>
+            <label class="settings-label" for="discord-token">Bot token</label><input id="discord-token" name="discordToken" type="password" autocomplete="new-password" placeholder="Paste your Discord bot token" />
+            <label class="settings-label" for="guild-id">Discord server ID</label><input id="guild-id" name="guildId" type="text" inputmode="numeric" placeholder="15–25 digit server ID" autocomplete="off" />
+            <p class="settings-help">Create a bot in the Discord Developer Portal. Grant only View Channels, Connect and Speak permissions for your server. Never commit its token to GitHub.</p>
+            <label class="settings-checkbox"><input type="checkbox" id="clear-discord" /> Forget saved Discord credentials</label>
+          </div>
+          <div class="settings-section"><div class="settings-section-title">Discogs collection · optional</div>
+            <label class="settings-label" for="discogs-username">Discogs username</label><input id="discogs-username" name="discogsUsername" type="text" autocomplete="username" placeholder="Your Discogs username" />
+            <label class="settings-label" for="discogs-token">Personal access token</label><input id="discogs-token" name="discogsToken" type="password" autocomplete="new-password" placeholder="Paste your Discogs personal token" />
+            <p class="settings-help">Optional. You can leave both fields blank and use a local CSV import or manual album entry. A token enables collection sync.</p>
+            <label class="settings-checkbox"><input type="checkbox" id="clear-discogs" /> Forget saved Discogs credentials</label>
+          </div>
+          <div class="settings-section"><div class="settings-section-title">Discord presence</div>
+            <label class="settings-checkbox"><input type="checkbox" id="bot-presence-enabled" checked /> Show the selected album and artist on the bot profile</label>
+            <label class="settings-checkbox"><input type="checkbox" id="clear-presence-on-stop" checked /> Clear Now Playing when the broadcast stops</label>
+            <label class="settings-checkbox"><input type="checkbox" id="bot-avatar-from-album" checked /> Use album artwork as the bot profile avatar</label>
+            <p class="settings-help">Discord does not support cover images inside a bot’s Listening activity. This option changes the bot’s profile avatar while an album is selected, then restores its original avatar when Now Playing is cleared. Discord may rate-limit avatar changes.</p>
+          </div>
+          <div class="settings-footer"><span id="settings-message" role="status">Restart required after saving credentials.</span><button class="primary-button" type="submit" id="save-settings"><span class="button-symbol">✓</span><span>Save & restart</span><span class="button-arrow">↗</span></button></div>
+        </form>
+      </dialog>
+
+      <dialog class="settings-dialog" id="manual-track-dialog" aria-labelledby="manual-track-title">
+        <form id="manual-track-form" class="settings-form">
+          <div class="settings-top"><div><div class="section-kicker">NOW PLAYING / MANUAL</div><h2 id="manual-track-title">Which album is on the turntable?</h2><p>Enter the album currently on the turntable. This changes metadata and Discord presence only; your live audio still comes from the input device.</p></div><button type="button" class="dialog-close" id="close-manual-track" aria-label="Close manual entry">×</button></div>
+          <div class="settings-section">
+            <label class="settings-label" for="manual-artist">Artist</label><input id="manual-artist" type="text" maxlength="200" placeholder="Artist or band" />
+            <label class="settings-label" for="manual-album">Album</label><input id="manual-album" type="text" maxlength="200" required placeholder="Album title" />
+          </div>
+          <div class="settings-footer"><span id="manual-track-message" role="status">Manual entry works without Discogs.</span><button class="primary-button" type="submit"><span class="button-symbol">♫</span><span>Set as Now Playing</span><span class="button-arrow">↗</span></button></div>
+        </form>
+      </dialog>
+
+      <footer class="footer"><div><span class="footer-mark">◉</span> needlecast <span class="footer-muted">— made for the long play</span></div><div class="footer-links"><a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer">Discord Developer Portal ↗</a><span>Audio stays on your machine until it reaches Discord.</span></div></footer>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.DS_Store
+build/
+release/
+dist/
+*.log
+.needlecast-data/
+coverage/
+*.spec
+build-resources/capture-agent/*.exe
