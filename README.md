@@ -10,12 +10,13 @@ There are two ways to run the app. Most users should choose the Windows installe
 
 | Option | Best for | What to do |
 | --- | --- | --- |
-| **A. Windows installer (`.exe`) — recommended** | People who just want to use Needlecast | Open your repository's **Releases** page and download `Needlecast-Setup-<version>.exe`. Run the installer and launch Needlecast from the Start Menu or desktop shortcut. Node.js and Python are not required for normal use of the packaged app. |
+| **A. Windows installer (`.exe`) — recommended** | People who just want to use Needlecast | Open [Needlecast Releases](https://github.com/kanyefue/Needlecast/releases) and download `Needlecast-Setup-<version>.exe`. Run the installer and launch Needlecast from the Start Menu or desktop shortcut. Node.js and Python are not required for normal use of the packaged app. |
 | **B. Run from source (`npm install`)** | Developers, testers, and contributors | Install Node.js and Python, clone or download the source, run `npm install`, install the capture-agent requirements, then run `npm start`. Follow [Run from source](#option-b-run-from-source-npm-install). |
 
-**Important:** the `.exe` download is available only after a maintainer has published a GitHub Release. If the Releases page is empty, use Option B or see [Build the Windows installer](#build-the-windows-installer) to create one.
+**Important:** the `.exe` download is available only after a maintainer has published a GitHub Release. If the [Releases page](https://github.com/kanyefue/Needlecast/releases) is empty, use Option B or see [Build the Windows installer](#build-the-windows-installer) to create one.
 
-> Maintainer: replace `YOUR-USERNAME/YOUR-REPOSITORY` in any example release/clone URLs with the actual GitHub repository path.
+> **Repository:** [https://github.com/kanyefue/Needlecast](https://github.com/kanyefue/Needlecast)  
+> **Clone URL:** `https://github.com/kanyefue/Needlecast.git`
 
 ## What Needlecast does
 
@@ -34,10 +35,10 @@ Needlecast streams audio from your connected audio input. Discogs and Apple are 
 
 ## Option A: Install the Windows `.exe`
 
-1. Open the GitHub repository in your browser.
-2. Select **Releases**.
+1. Open the [Needlecast repository](https://github.com/kanyefue/Needlecast).
+2. Select [**Releases**](https://github.com/kanyefue/Needlecast/releases).
 3. Download the latest `Needlecast-Setup-<version>.exe` asset.
-4. Run the installer. Windows may warn that the installer is from an unknown publisher because alpha builds are not code-signed yet. Only run installers you have obtained from a repository/release you trust.
+4. Run the installer. Windows may warn that the installer is from an unknown publisher because alpha builds are not code-signed yet. Only run installers you have obtained from the [official Needlecast Releases page](https://github.com/kanyefue/Needlecast/releases).
 5. Launch **Needlecast** from the Start Menu or desktop shortcut.
 6. Complete the first-run setup described in [Configure Discord](#configure-discord).
 7. Select the correct audio input and test your input level before joining a voice channel.
@@ -57,7 +58,16 @@ The installer creates Start Menu and desktop shortcuts and lets you choose the i
 
 ### Start the desktop app
 
-Open PowerShell in the project root — the folder containing `package.json` — and run:
+Clone the repository from the directory where you want to store the project, then enter the project folder:
+
+```powershell
+git clone https://github.com/kanyefue/Needlecast.git
+cd Needlecast
+```
+
+If you prefer a ZIP, download it from the [Needlecast repository](https://github.com/kanyefue/Needlecast), extract it, and open PowerShell in the extracted project folder — the folder containing `package.json`.
+
+Then install dependencies, run checks, and start the app:
 
 ```powershell
 npm install
@@ -159,7 +169,7 @@ This repository includes `.github/workflows/windows-release.yml`. It runs on a W
 ### Build a test installer artifact
 
 1. Push the source and the workflow file to the repository's default branch.
-2. Open the repository's **Actions** tab.
+2. Open [Needlecast Actions](https://github.com/kanyefue/Needlecast/actions).
 3. Choose **Windows installer** in the workflows list.
 4. Select **Run workflow** and start the workflow on the default branch.
 5. Wait for the workflow to complete successfully, open that run, and download the `needlecast-windows-installer` artifact.
@@ -175,7 +185,7 @@ git tag v0.3.0-alpha.5
 git push origin v0.3.0-alpha.5
 ```
 
-The workflow is configured to build the `.exe` and attach it to a GitHub Release for tags beginning with `v`. Confirm the Actions run succeeded and check the repository's **Releases** page for the installer asset. Before wide distribution, consider signing the Windows executable; an unsigned installer may trigger Microsoft Defender SmartScreen warnings.
+The workflow is configured to build the `.exe` and attach it to a GitHub Release for tags beginning with `v`. Confirm the [Actions run](https://github.com/kanyefue/Needlecast/actions) succeeded and check [Needlecast Releases](https://github.com/kanyefue/Needlecast/releases) for the installer asset. Before wide distribution, consider signing the Windows executable; an unsigned installer may trigger Microsoft Defender SmartScreen warnings.
 
 ## Platform support
 
@@ -265,7 +275,7 @@ See [`SECURITY.md`](SECURITY.md) for security reporting guidance and [`LICENSE`]
 
 ## Contributing
 
-Bug reports with clear reproduction steps are welcome. Before opening a pull request, run:
+Bug reports with clear reproduction steps are welcome. Open an issue on the [Needlecast issue tracker](https://github.com/kanyefue/Needlecast/issues). Before opening a pull request, run:
 
 ```powershell
 npm run check
