@@ -4,6 +4,9 @@ let AGENT = 'http://127.0.0.1:8766';
 const $ = (id) => document.getElementById(id);
 const ui = {
   device: $('device-select'), channel: $('channel-select'), gain: $('gain-range'), gainValue: $('gain-value'),
+  bass: $('eq-bass'), bassValue: $('eq-bass-value'), mid: $('eq-mid'), midValue: $('eq-mid-value'),
+  treble: $('eq-treble'), trebleValue: $('eq-treble-value'), rumbleFilter: $('rumble-filter'), humFilter: $('hum-filter'), limiter: $('limiter-enabled'),
+  processingBadge: $('processing-badge'), processingStatus: $('processing-status'), eqPresets: [...document.querySelectorAll('[data-eq-preset]')],
   refreshDevices: $('refresh-devices'), refreshChannels: $('refresh-channels'), start: $('start-button'), stop: $('stop-button'),
   actionHint: $('action-hint'), error: $('error-box'), notice: $('notice'), levelBar: $('level-bar'), meterReadout: $('meter-readout'),
   waveBars: $('wave-bars'), liveBadge: $('live-badge'), screenState: $('screen-state'),
@@ -36,6 +39,111 @@ const artworkQueue = [];
 let artworkRequestsActive = 0;
 const MAX_ARTWORK_REQUESTS = 2;
 let artworkObserver = null;
+let processingTimer = null;
+const DEFAULT_AUDIO_PROCESSING = { bassDb: 0, midDb: 0, trebleDb: 0, rumbleFilter: true, humFilterHz: 50, limiterEnabled: true };
+const EQ_PRESETS = {
+  flat: { label: 'Flat', config: { ...DEFAULT_AUDIO_PROCESSING } },
+  warm: { label: 'Warm', config: { bassDb: 2, midDb: 0, trebleDb: -1, rumbleFilter: true, humFilterHz: 50, limiterEnabled: true } },
+  clarity: { label: 'Clarity', config: { bassDb: -1, midDb: 1, trebleDb: 2, rumbleFilter: true, humFilterHz: 50, limiterEnabled: true } },
+};
+
+function getAudioProcessingConfig() {
+  return {
+    bassDb: Number(ui.bass.value),
+    midDb: Number(ui.mid.value),
+    trebleDb: Number(ui.treble.value),
+    rumbleFilter: Boolean(ui.rumbleFilter.checked),
+    humFilterHz: [0, 50, 60].includes(Number(ui.humFilter.value)) ? Number(ui.humFilter.value) : 50,
+    limiterEnabled: Boolean(ui.limiter.checked),
+  };
+}
+
+function setAudioProcessingControls(config = DEFAULT_AUDIO_PROCESSING) {
+  const safeNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Math.max(-6, Math.min(6, Number(value))) : fallback;
+  ui.bass.value = String(safeNumber(config.bassDb));
+  ui.mid.value = String(safeNumber(config.midDb));
+  ui.treble.value = String(safeNumber(config.trebleDb));
+  ui.rumbleFilter.checked = config.rumbleFilter !== false;
+  ui.humFilter.value = String([0, 50, 60].includes(Number(config.humFilterHz)) ? Number(config.humFilterHz) : 50);
+  ui.limiter.checked = config.limiterEnabled !== false;
+  updateAudioProcessingLabels();
+}
+
+function updateAudioProcessingLabels() {
+  const config = getAudioProcessingConfig();
+  ui.bassValue.textContent = formatDb(config.bassDb);
+  ui.midValue.textContent = formatDb(config.midDb);
+  ui.trebleValue.textContent = formatDb(config.trebleDb);
+  const presetEntry = Object.entries(EQ_PRESETS).find(([, preset]) =>
+    preset.config.bassDb === config.bassDb && preset.config.midDb === config.midDb &&
+    preset.config.trebleDb === config.trebleDb && preset.config.rumbleFilter === config.rumbleFilter &&
+    preset.config.humFilterHz === config.humFilterHz && preset.config.limiterEnabled === config.limiterEnabled);
+  const presetName = presetEntry ? presetEntry[1].label.toUpperCase() : 'CUSTOM';
+  ui.processingBadge.textContent = `${presetName} · HUM ${config.humFilterHz ? `${config.humFilterHz} HZ` : 'OFF'} · PEAK ${config.limiterEnabled ? 'ON' : 'OFF'}`;
+  ui.eqPresets.forEach((button) => {
+    const active = presetEntry?.[0] === button.dataset.eqPreset;
+    button.classList.toggle('active', Boolean(active));
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function restoreAudioProcessingPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('needlecast.audioProcessing') || 'null');
+    if (saved && typeof saved === 'object') setAudioProcessingControls({ ...DEFAULT_AUDIO_PROCESSING, ...saved });
+    else setAudioProcessingControls(DEFAULT_AUDIO_PROCESSING);
+  } catch (_) {
+    setAudioProcessingControls(DEFAULT_AUDIO_PROCESSING);
+  }
+}
+
+function saveAudioProcessingPreferences() {
+  try { localStorage.setItem('needlecast.audioProcessing', JSON.stringify(getAudioProcessingConfig())); } catch (_) { /* settings can still be used until the window closes */ }
+}
+
+function updateProcessingStatus(status = agentStatus) {
+  const config = getAudioProcessingConfig();
+  const sourcePeak = Number(status.sourcePeak || 0);
+  const reduction = Number(status.limiterReductionDb || 0);
+  const peak = Number(status.peak || 0);
+  if (status.streaming && sourcePeak >= 0.995) {
+    ui.processingStatus.textContent = 'Input clipping detected at the sound-card input. Lower its hardware/Windows level; the limiter cannot repair already-clipped audio.';
+    ui.processingStatus.classList.add('warning');
+  } else if (status.streaming && config.limiterEnabled && reduction > 0.5) {
+    ui.processingStatus.textContent = `Peak protection is reducing peaks by ${reduction.toFixed(1)} dB. Hum reduction ${config.humFilterHz ? `at ${config.humFilterHz} Hz + harmonics` : 'is off'}. Lower input gain if this happens often.`;
+    ui.processingStatus.classList.remove('warning');
+  } else if (status.streaming && !config.limiterEnabled && peak >= 0.89) {
+    ui.processingStatus.textContent = 'Signal is close to digital clipping. Turn peak protection on or reduce input gain.';
+    ui.processingStatus.classList.add('warning');
+  } else {
+    ui.processingStatus.textContent = `${config.rumbleFilter ? '30 Hz rumble filter on' : 'rumble filter off'} · ${config.humFilterHz ? `${config.humFilterHz} Hz hum reduction on` : 'hum reduction off'} · ${config.limiterEnabled ? 'peak protection on' : 'peak protection off'}.`;
+    ui.processingStatus.classList.remove('warning');
+  }
+}
+
+async function syncAudioProcessingToAgent() {
+  if (!agentOnline) return false;
+  const config = getAudioProcessingConfig();
+  try {
+    await post(`${AGENT}/api/processing`, config);
+    updateProcessingStatus(agentStatus);
+    return true;
+  } catch (error) {
+    ui.processingStatus.textContent = `Could not apply audio settings: ${error.message}`;
+    ui.processingStatus.classList.add('warning');
+    return false;
+  }
+}
+
+function scheduleAudioProcessingUpdate() {
+  updateAudioProcessingLabels();
+  saveAudioProcessingPreferences();
+  updateProcessingStatus(agentStatus);
+  window.clearTimeout(processingTimer);
+  processingTimer = window.setTimeout(() => {
+    void syncAudioProcessingToAgent();
+  }, 200);
+}
 
 // A restrained live waveform: activity is driven by the measured RMS level.
 const bars = [];
@@ -157,6 +265,7 @@ function updateMeter(status) {
     bars[i].style.height = `${height}px`;
     bars[i].style.opacity = active ? String(0.45 + envelope * 0.5) : '0.3';
   }
+  updateProcessingStatus(status);
 }
 
 function updateStatus() {
@@ -170,6 +279,8 @@ function updateStatus() {
   setDot('agent-dot', agentOnline && agentStatus.streaming, !agentOnline);
 
   const audioConnected = Boolean(backendStatus.audioSocketConnected && agentStatus.connectedToRelay);
+  const opusBitrate = Number(backendStatus.opusBitrate || 0);
+  $('opus-bitrate-value').textContent = opusBitrate > 0 ? `${Math.round(opusBitrate / 1000)} kbps` : 'Auto / channel';
   $('audio-status').textContent = audioConnected ? 'Receiving audio' : (backendStatus.connected ? 'Waiting for input' : 'Standby');
   $('audio-detail').textContent = audioConnected ? 'Host → relay · live PCM' : '48 kHz · stereo PCM';
   setDot('audio-dot', audioConnected, Boolean(backendStatus.lastError || agentStatus.lastError));
@@ -214,8 +325,9 @@ async function refreshStatus() {
   updateStatus();
   // If the bundled agent starts slightly after the UI, automatically populate the
   // device list rather than asking the user to discover and refresh it manually.
-  if (!wasAgentOnline && agentOnline && ui.device.options[0]?.textContent === 'Start the Windows capture agent first') {
-    void refreshDevices();
+  if (!wasAgentOnline && agentOnline) {
+    if (ui.device.options[0]?.textContent === 'Start the Windows capture agent first') void refreshDevices();
+    void syncAudioProcessingToAgent();
   }
 }
 
@@ -231,7 +343,7 @@ async function startBroadcast() {
   try {
     await post('/api/stream/start', { channelId: ui.channel.value });
     discordStarted = true;
-    await post(`${AGENT}/api/start`, { deviceIndex: Number(ui.device.value), gainDb: Number(ui.gain.value) });
+    await post(`${AGENT}/api/start`, { deviceIndex: Number(ui.device.value), gainDb: Number(ui.gain.value), ...getAudioProcessingConfig() });
     await refreshStatus();
   } catch (error) {
     if (discordStarted) {
@@ -667,6 +779,19 @@ ui.gain.addEventListener('input', () => {
     try { await post(`${AGENT}/api/gain`, { gainDb: Number(ui.gain.value) }); } catch (_) { /* visible on next status poll */ }
   }, 150);
 });
+
+[ui.bass, ui.mid, ui.treble, ui.rumbleFilter, ui.humFilter, ui.limiter].forEach((control) => {
+  control.addEventListener('input', scheduleAudioProcessingUpdate);
+  control.addEventListener('change', scheduleAudioProcessingUpdate);
+});
+ui.eqPresets.forEach((button) => {
+  button.addEventListener('click', () => {
+    const preset = EQ_PRESETS[button.dataset.eqPreset];
+    if (!preset) return;
+    setAudioProcessingControls(preset.config);
+    scheduleAudioProcessingUpdate();
+  });
+});
 ui.refreshDevices.addEventListener('click', refreshDevices);
 ui.refreshChannels.addEventListener('click', refreshChannels);
 ui.start.addEventListener('click', startBroadcast);
@@ -691,6 +816,7 @@ settingsUi.clearDiscogs.addEventListener('change', () => {
 
 (async function init() {
   ui.gainValue.textContent = formatDb(ui.gain.value);
+  restoreAudioProcessingPreferences();
   try {
     const config = await request('/api/config');
     if (config.captureAgentBase) AGENT = config.captureAgentBase;
@@ -701,6 +827,7 @@ settingsUi.clearDiscogs.addEventListener('change', () => {
     collectionSource = localLibrary.count > 0 ? 'local' : (settingsStatus.discogsConfigured ? 'discogs' : 'local');
   } catch (_) { collectionSource = settingsStatus.discogsConfigured ? 'discogs' : 'local'; }
   await Promise.all([refreshDevices(), refreshChannels(), refreshCollection(false, collectionSource), loadSettingsAndRuntimeStatuses()]);
+  await syncAudioProcessingToAgent();
   try {
     const savedSelection = await request('/api/selection');
     if (savedSelection.selection) renderSelectedTrack(savedSelection.selection);

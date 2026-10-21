@@ -73,6 +73,7 @@ let lastError = null;
 let activeChannelName = null;
 let activeChannelId = null;
 let audioResource = null;
+let activeOpusBitrate = null;
 let shutdownStarted = false;
 
 player.on('error', (error) => {
@@ -92,6 +93,7 @@ app.get('/api/status', (_req, res) => {
     botReady: bot.isReady(),
     botTag: bot.user?.tag || null,
     botPresenceEnabled: BOT_PRESENCE_ENABLED,
+    opusBitrate: activeOpusBitrate,
     connected: Boolean(connection && connection.state.status === VoiceConnectionStatus.Ready),
     channelName: activeChannelName,
     channelId: activeChannelId,
@@ -334,6 +336,32 @@ app.post('/api/stream/start', async (req, res) => {
     }
     currentPcm = new PassThrough({ highWaterMark: 48_000 });
     audioResource = createAudioResource(currentPcm, { inputType: StreamType.Raw });
+
+    // Use the channel's available voice bitrate for music, capped at 128 kbps.
+    // This can reduce watery/warbling artifacts from encoding stereo PCM at a
+    // low default bitrate. Never change the user's Discord channel settings.
+    const availableChannelBitrate = Number(channel.bitrate);
+    const opusBitrate = Math.min(
+      128_000,
+      Number.isFinite(availableChannelBitrate) && availableChannelBitrate > 0
+        ? availableChannelBitrate
+        : 96_000,
+    );
+    if (typeof audioResource.encoder?.setBitrate === 'function') {
+      try {
+        audioResource.encoder.setBitrate(opusBitrate);
+        activeOpusBitrate = opusBitrate;
+        console.info(`Needlecast Opus encoder target: ${Math.round(opusBitrate / 1000)} kbps for channel "${channel.name}".`);
+      } catch (encoderError) {
+        // An encoder config failure should not prevent a previously working broadcast.
+        activeOpusBitrate = null;
+        console.warn(`Could not set the Opus bitrate; using the encoder default: ${encoderError.message}`);
+      }
+    } else {
+      activeOpusBitrate = null;
+      console.warn('The selected audio resource has no configurable Opus encoder; using its default bitrate.');
+    }
+
     connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
@@ -360,6 +388,7 @@ app.post('/api/stream/start', async (req, res) => {
     connection = null;
     activeChannelName = null;
     activeChannelId = null;
+    activeOpusBitrate = null;
     if (currentPcm) {
       try { currentPcm.destroy(); } catch (_) { /* ignored */ }
     }
@@ -381,6 +410,7 @@ app.post('/api/stream/stop', (_req, res) => {
   audioResource = null;
   activeChannelName = null;
   activeChannelId = null;
+  activeOpusBitrate = null;
   audioSocketConnected = false;
   lastError = null;
   if (CLEAR_PRESENCE_ON_STOP) clearNowPlaying();

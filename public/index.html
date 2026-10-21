@@ -15,7 +15,7 @@
         <span class="brand-mark"><span class="record-center"></span></span>
         <span class="brand-copy"><strong>needlecast</strong><small>LIVE AUDIO BRIDGE</small></span>
       </a>
-      <div class="topbar-right"><span class="local-pill"><span class="green-dot"></span> LOCAL INSTANCE</span><span class="version">v0.3.0-alpha.4</span><button class="settings-button" id="open-settings" type="button">⚙ Settings</button></div>
+      <div class="topbar-right"><span class="local-pill"><span class="green-dot"></span> LOCAL INSTANCE</span><span class="version">v0.3.0-alpha.6</span><button class="settings-button" id="open-settings" type="button">⚙ Settings</button></div>
     </header>
 
     <main>
@@ -72,7 +72,33 @@
             <div class="field-title-row"><label for="gain-range">Input gain</label><span id="gain-value" class="mono-value">−12 dB</span></div>
             <input id="gain-range" type="range" min="-36" max="12" value="-12" step="1" />
             <div class="range-ends"><span>−36 dB · quieter</span><span>+12 dB · louder</span></div>
+            <p class="field-hint">Start low. Aim for music peaks around −12 to −6 dBFS. If the USB sound card clips at its input, lower its hardware/Windows level first; software cannot undo clipping that already happened.</p>
           </div>
+
+          <section class="audio-processing" aria-labelledby="audio-processing-heading">
+            <div class="processing-heading">
+              <div><div class="section-kicker">MUSIC SIGNAL / DSP</div><h3 id="audio-processing-heading">Audio shaping</h3></div>
+              <span id="processing-badge" class="processing-badge">FLAT · HUM 50 HZ · PEAK ON</span>
+            </div>
+            <div class="eq-presets" role="group" aria-label="Equalizer presets">
+              <button class="eq-preset active" type="button" data-eq-preset="flat" aria-pressed="true">Flat</button>
+              <button class="eq-preset" type="button" data-eq-preset="warm" aria-pressed="false">Warm</button>
+              <button class="eq-preset" type="button" data-eq-preset="clarity" aria-pressed="false">Clarity</button>
+            </div>
+            <div class="eq-grid">
+              <div class="eq-control"><div class="eq-label-row"><label for="eq-bass">Bass <small>120 Hz</small></label><output id="eq-bass-value" for="eq-bass">0 dB</output></div><input id="eq-bass" type="range" min="-6" max="6" value="0" step="1" /></div>
+              <div class="eq-control"><div class="eq-label-row"><label for="eq-mid">Mids <small>1 kHz</small></label><output id="eq-mid-value" for="eq-mid">0 dB</output></div><input id="eq-mid" type="range" min="-6" max="6" value="0" step="1" /></div>
+              <div class="eq-control"><div class="eq-label-row"><label for="eq-treble">Treble <small>8 kHz</small></label><output id="eq-treble-value" for="eq-treble">0 dB</output></div><input id="eq-treble" type="range" min="-6" max="6" value="0" step="1" /></div>
+            </div>
+            <div class="processing-toggles">
+              <label class="processing-toggle" for="rumble-filter"><input id="rumble-filter" type="checkbox" checked /><span><strong>Turntable rumble filter</strong><small>Gentle 30 Hz high-pass to reduce subsonic rumble</small></span></label>
+              <label class="processing-toggle" for="limiter-enabled"><input id="limiter-enabled" type="checkbox" checked /><span><strong>Peak protection</strong><small>Controls digital peaks before Discord encoding</small></span></label>
+              <label class="processing-toggle processing-toggle-select" for="hum-filter"><span><strong>Mains hum reduction</strong><small>EU: 50 Hz + narrow harmonics · choose Off if the bass sounds thin</small></span><select id="hum-filter" aria-label="Mains hum reduction"><option value="0">Off</option><option value="50" selected>50 Hz · Europe</option><option value="60">60 Hz · other regions</option></select></label>
+            </div>
+            <div class="processing-status" id="processing-status" role="status">Flat EQ · 50 Hz hum reduction on · peak protection on.</div>
+            <p class="processing-help">Music-focused processing only: no voice-style gate or denoiser. Hum filtering uses narrow notches at the mains frequency and four harmonics. A tone at the exact same frequency as the hum will also be reduced; software cannot fix a hardware ground loop or input clipping.</p>
+          </section>
+
           <div class="meter-box">
             <div class="meter-heading"><span>INPUT LEVEL</span><span id="meter-readout" class="meter-readout">NO SIGNAL</span></div>
             <div class="meter-track"><div id="level-bar" class="meter-fill"></div><i class="meter-marker marker-yellow"></i><i class="meter-marker marker-red"></i></div>
@@ -96,7 +122,7 @@
               <div class="wave-bars" id="wave-bars"></div>
               <div class="wave-label left">L</div><div class="wave-label right">R</div>
             </div>
-            <div class="monitor-stats"><div><small>SAMPLE RATE</small><strong>48 <i>kHz</i></strong></div><div><small>CHANNELS</small><strong>2 <i>stereo</i></strong></div><div><small>ENCODING</small><strong>Opus <i>voice</i></strong></div></div>
+            <div class="monitor-stats"><div><small>SAMPLE RATE</small><strong>48 <i>kHz</i></strong></div><div><small>CHANNELS</small><strong>2 <i>stereo</i></strong></div><div><small>OPUS BITRATE</small><strong id="opus-bitrate-value">Auto <i>voice</i></strong></div></div>
           </div>
           <div class="route-list">
             <div class="route-row"><span class="route-index">A</span><div class="route-copy"><strong>Host input</strong><small id="route-input">Not selected</small></div><span class="route-state" id="route-input-state">WAITING</span></div>

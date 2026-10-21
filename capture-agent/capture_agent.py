@@ -11,11 +11,12 @@ import os
 import queue
 import threading
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
 import sounddevice as sd
 import websockets
+from audio_processing import AudioProcessor, DEFAULT_PROCESSING
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -33,7 +34,10 @@ state = {
     "selectedDevice": None,
     "selectedDeviceName": None,
     "gainDb": -12.0,
+    **DEFAULT_PROCESSING,
     "peak": 0.0,
+    "sourcePeak": 0.0,
+    "limiterReductionDb": 0.0,
     "rms": 0.0,
     "droppedBlocks": 0,
     "lastError": None,
@@ -44,15 +48,43 @@ capture_stream: Optional[sd.InputStream] = None
 sender_task: Optional[asyncio.Task] = None
 connected_event: Optional[asyncio.Event] = None
 stop_event = threading.Event()
+processor_lock = threading.Lock()
+audio_processor = AudioProcessor(DEFAULT_PROCESSING)
 
 
-class StartRequest(BaseModel):
+class ProcessingFields(BaseModel):
+    bassDb: float = Field(default=0.0, ge=-6.0, le=6.0)
+    midDb: float = Field(default=0.0, ge=-6.0, le=6.0)
+    trebleDb: float = Field(default=0.0, ge=-6.0, le=6.0)
+    rumbleFilter: bool = True
+    humFilterHz: Literal[0, 50, 60] = 50
+    limiterEnabled: bool = True
+
+
+class StartRequest(ProcessingFields):
     deviceIndex: Optional[int] = None
     gainDb: float = Field(default=-12.0, ge=-36.0, le=12.0)
 
 
 class GainRequest(BaseModel):
     gainDb: float = Field(ge=-36.0, le=12.0)
+
+
+def _replace_processor(config: dict):
+    """Swap DSP settings safely; only the audio callback mutates filter state."""
+    global audio_processor
+    clean = {
+        "bassDb": float(np.clip(config.get("bassDb", 0.0), -6.0, 6.0)),
+        "midDb": float(np.clip(config.get("midDb", 0.0), -6.0, 6.0)),
+        "trebleDb": float(np.clip(config.get("trebleDb", 0.0), -6.0, 6.0)),
+        "rumbleFilter": bool(config.get("rumbleFilter", True)),
+        "humFilterHz": int(config.get("humFilterHz", 50)) if int(config.get("humFilterHz", 50)) in (0, 50, 60) else 50,
+        "limiterEnabled": bool(config.get("limiterEnabled", True)),
+    }
+    new_processor = AudioProcessor(clean)
+    with processor_lock:
+        audio_processor = new_processor
+    _patch_state(**clean, limiterReductionDb=0.0)
 
 
 def _patch_state(**updates):
@@ -69,28 +101,37 @@ def _input_callback(indata, frames, time_info, status_flags):
         return
 
     try:
-        audio = indata
+        audio = np.asarray(indata, dtype=np.float32)
         if audio.shape[1] == 1:
             audio = np.repeat(audio, 2, axis=1)
         elif audio.shape[1] > 2:
             audio = audio[:, :2]
 
+        source_peak = float(np.max(np.abs(audio))) if audio.size else 0.0
         with state_lock:
             gain_db = float(state["gainDb"])
-        gain = 10.0 ** (gain_db / 20.0)
-        adjusted = np.clip(audio * gain, -1.0, 1.0)
+        with processor_lock:
+            processor = audio_processor
+
+        adjusted = processor.process(audio, gain_db)
         peak = float(np.max(np.abs(adjusted))) if adjusted.size else 0.0
         rms = float(np.sqrt(np.mean(np.square(adjusted)))) if adjusted.size else 0.0
         pcm = (adjusted * 32767.0).astype(np.int16, copy=False).tobytes()
 
-        _patch_state(peak=peak, rms=rms)
+        _patch_state(
+            peak=peak,
+            sourcePeak=source_peak,
+            limiterReductionDb=processor.limiter_reduction_db,
+            rms=rms,
+        )
         try:
             pcm_queue.put_nowait(pcm)
         except queue.Full:
             # Prefer current audio over stale audio if the relay temporarily falls behind.
             try:
                 pcm_queue.get_nowait()
-                _patch_state(droppedBlocks=state["droppedBlocks"] + 1)
+                with state_lock:
+                    state["droppedBlocks"] += 1
             except queue.Empty:
                 pass
             try:
@@ -171,7 +212,7 @@ async def _stop_capture(clear_error: bool = False):
         except (asyncio.TimeoutError, asyncio.CancelledError):
             task.cancel()
     connected_event = None
-    _patch_state(connectedToRelay=False, peak=0.0, rms=0.0)
+    _patch_state(connectedToRelay=False, peak=0.0, sourcePeak=0.0, limiterReductionDb=0.0, rms=0.0)
     if clear_error:
         _patch_state(lastError=None)
 
@@ -234,6 +275,13 @@ def set_gain(payload: GainRequest):
     return {"ok": True, "gainDb": float(payload.gainDb)}
 
 
+@app.post("/api/processing")
+def set_processing(payload: ProcessingFields):
+    config = payload.dict()
+    _replace_processor(config)
+    return {"ok": True, "processing": config}
+
+
 @app.post("/api/start")
 async def start_capture(payload: StartRequest):
     global capture_stream, sender_task, connected_event
@@ -269,6 +317,7 @@ async def start_capture(payload: StartRequest):
         _clear_queue()
         stop_event.clear()
         connected_event = asyncio.Event()
+        _replace_processor(payload.dict())
         _patch_state(
             streaming=True,
             connectedToRelay=False,
@@ -276,6 +325,8 @@ async def start_capture(payload: StartRequest):
             selectedDeviceName=device_name,
             gainDb=float(payload.gainDb),
             peak=0.0,
+            sourcePeak=0.0,
+            limiterReductionDb=0.0,
             rms=0.0,
             droppedBlocks=0,
             lastError=None,

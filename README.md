@@ -1,6 +1,6 @@
 # Needlecast
 
-**Play your physical records into a Discord voice channel.** Needlecast is a local-first Windows desktop app that captures audio from a turntable or audio interface and streams it to a Discord voice channel. It includes an album-first library, CSV import, optional Discogs integration, automatic album-art lookup, and a bot `Listening to…` activity.
+**Play your physical records into a Discord voice channel.** Needlecast is a local-first Windows desktop app that captures audio from a turntable or audio interface and streams it to a Discord voice channel. It includes an album-first library, CSV import, optional Discogs integration, automatic album-art lookup, a music-focused 3-band EQ, optional mains-hum notches, turntable rumble filtering and peak protection, and a bot `Listening to…` activity.
 
 > **Status: early alpha — Windows 10/11 x64.** The project includes a Windows installer workflow, but builds are currently unsigned and still need end-to-end testing on a range of Windows PCs, audio devices, and Discord servers. Linux is not a supported packaged release yet.
 
@@ -21,6 +21,7 @@ There are two ways to run the app. Most users should choose the Windows installe
 ## What Needlecast does
 
 - Captures live audio from a physical turntable connected to your PC's Line-In, microphone input, or USB audio interface.
+- Includes a live 3-band bass/mid/treble equalizer, a 30 Hz rumble filter, selectable 50/60 Hz mains-hum reduction, and peak protection before Discord encoding. No speech-style noise gate or denoiser is applied to the music signal.
 - Sends the captured audio into a Discord voice channel using a Discord bot.
 - Lets you select **one album at a time** as Now Playing; track-by-track selection is not required.
 - Imports a local record collection from a Discogs CSV export, or lets you add an album manually.
@@ -103,6 +104,22 @@ npm run dist:win          # Build the Windows installer (requires bundled agent)
 
 The bot presence is metadata. It displays the album and artist as a `Listening` activity. Discord's standard bot activity API does not let Needlecast attach an arbitrary dynamic album cover inside the activity card. The optional album-artwork workaround changes the bot's profile avatar instead; it can be disabled in Needlecast Settings and is subject to Discord rate limits.
 
+## Audio shaping (EQ, hum reduction and peak protection)
+
+The Input & destination panel includes a music-oriented processing section. Its controls are applied live to the input before audio is sent to Discord:
+
+- **Bass (120 Hz):** low-shelf adjustment from −6 to +6 dB.
+- **Mids (1 kHz):** presence adjustment from −6 to +6 dB.
+- **Treble (8 kHz):** high-shelf adjustment from −6 to +6 dB.
+- **Turntable rumble filter:** a gentle 30 Hz high-pass for subsonic rumble.
+- **Mains hum reduction:** an optional narrow notch filter at 50 Hz (common in Europe) or 60 Hz, plus four harmonics. This can reduce steady electrical hum, but may also attenuate music tones at exactly those frequencies. It does not remove broadband hiss or fix a hardware ground loop.
+- **Peak protection:** a fast-attack limiter that keeps digital peaks below −1 dBFS before PCM is passed to the Discord encoder.
+- **Presets:** Flat, Warm, and Clarity; manual adjustments switch the badge to Custom.
+
+Start with **Flat**, the local mains hum option (50 Hz in Europe), rumble filtering and peak protection enabled, then adjust by 1–2 dB at a time. For extra headroom, aim for peaks around −12 to −6 dBFS. If the input device itself clips, lower its hardware or Windows input gain first; a digital limiter cannot restore audio already clipped by the sound card. Needlecast deliberately does not apply speech-style noise gating or denoising, which can cut the quiet details and surface noise in a record. EQ and peak protection cannot correct a hardware ground loop, bad cable, or distortion already present in the source signal.
+
+The EQ preferences are kept locally in the app window and sent to the capture agent when it is available. SciPy is used for real-time digital filtering; it is installed from `capture-agent/requirements.txt` and bundled into the Windows capture-agent executable during builds. For Discord playback, Needlecast also targets the selected voice channel's available Opus bitrate, capped at 128 kbps when the encoder supports it; the live target is shown in the Broadcast monitor. You can raise the channel bitrate in Discord channel settings if your server allows it.
+
 ## Connect your turntable and broadcast
 
 1. Connect the turntable's output to a suitable input on your PC. A phono turntable output normally needs a phono preamp; use a line-level output from a receiver/preamp or a suitable USB audio interface.
@@ -157,7 +174,7 @@ npm run dist:win
 The capture-agent build script installs its Python build dependencies, then uses PyInstaller to bundle the capture process as an executable. Electron Builder packages the desktop app and its bundled agent into an NSIS installer. The output is written under `release/`, normally with a name like:
 
 ```text
-release/Needlecast-Setup-0.3.0-alpha.5.exe
+release/Needlecast-Setup-0.3.0-alpha.6.exe
 ```
 
 The exact name follows the version in `package.json`. `build-resources/icon.ico` is used for the application/installer icon. Keep your preferred taskbar logo at that path if you change the icon.
@@ -181,8 +198,8 @@ The manual workflow produces an Actions artifact; it does not automatically crea
 After reviewing/testing the build, push a version tag matching the version in `package.json`. For this source version, the tag would be:
 
 ```powershell
-git tag v0.3.0-alpha.5
-git push origin v0.3.0-alpha.5
+git tag v0.3.0-alpha.6
+git push origin v0.3.0-alpha.6
 ```
 
 The workflow is configured to build the `.exe` and attach it to a GitHub Release for tags beginning with `v`. Confirm the [Actions run](https://github.com/kanyefue/Needlecast/actions) succeeded and check [Needlecast Releases](https://github.com/kanyefue/Needlecast/releases) for the installer asset. Before wide distribution, consider signing the Windows executable; an unsigned installer may trigger Microsoft Defender SmartScreen warnings.
@@ -246,6 +263,14 @@ See [`SECURITY.md`](SECURITY.md) for security reporting guidance and [`LICENSE`]
 - Confirm the bot has **View Channel**, **Connect**, and **Speak** permissions for the target voice channel, including channel-specific overrides.
 - Confirm that the bot is online in the correct server and that another app/session is not interfering with the voice connection.
 - Run `npm run check` and `npm test` when testing from source. Check Needlecast's UI status and logs for more detail.
+
+### Audio sounds clipped, muffled, or noise-gated
+
+- Start with the Flat preset, set Needlecast Input gain around −12 dB, and keep peak protection enabled. Then raise gain only as needed; aim for peaks around −12 to −6 dBFS, not near 0 dBFS.
+- If Needlecast reports input clipping, reduce the external sound card's input/hardware level or Windows recording level. A software limiter cannot repair clipping that occurred before capture.
+- In Windows sound-device properties, try turning off vendor audio effects/enhancements or microphone noise suppression for the selected input. Those features are designed for speech and can distort music.
+- If the sound becomes “watery” only after it reaches Discord, compare the local input with the broadcast and check the Discord voice channel's bitrate. The app itself does not run a speech denoiser; it does encode the stream using Opus.
+- Do not use the PC's speaker output as an input loopback unless that is intentionally what you want to capture.
 
 ### No audio or distorted audio
 
